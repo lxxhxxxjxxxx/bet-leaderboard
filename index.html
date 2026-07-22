@@ -57,12 +57,13 @@
     color:var(--text); background:var(--surface); border:1px solid var(--border);
     border-radius:10px; box-shadow:var(--shadow); }
   .refresh:active { transform:translateY(1px); }
+  .refresh:disabled { opacity:.55; cursor:default; }
   .meta { font-size:13px; color:var(--muted); font-family:var(--mono);
     display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
   .meta b { color:var(--text); font-weight:600; }
   .snap { display:inline-flex; align-items:center; gap:6px; padding:3px 9px;
     border-radius:999px; background:var(--surface-2); border:1px solid var(--border);
-    font-size:12px; color:var(--muted); }
+    font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
 
   .leader { margin:24px 0 18px; padding:22px 24px; background:var(--surface);
     border:1px solid var(--border); border-left:4px solid var(--accent);
@@ -142,7 +143,7 @@
       <button class="refresh" id="refresh" type="button">↻ 새로고침</button>
     </div>
     <div class="meta">
-      <span class="snap" id="stamp">📸 —</span>
+      <span class="snap" id="stamp">🔄 불러오는 중…</span>
       <span>기준가 대비 <b>등락률</b> 순위</span>
     </div>
     <div id="leader"></div>
@@ -152,16 +153,18 @@
       팔란티어·나스닥 <code>2/5 종가</code> · 태광산업·네이버·로보티즈 <code>2/6 종가</code> · BNB <code>2/6 21:00 KST</code>
       <div class="note">
         · 등락률 = (현재가 − 기준가) ÷ 기준가 &nbsp;·&nbsp; 팔란티어·BNB는 USD, 태광산업·네이버·로보티즈는 KRW 기준.<br>
-        · GitHub Actions가 약 10분마다 시세를 갱신합니다. 이 페이지는 60초마다 자동으로 최신 데이터를 다시 불러옵니다.<br>
-        · 데이터는 비밀번호로 암호화되어 있으며 브라우저에서만 복호화됩니다. 출처: Yahoo Finance.
+        · <b>↻ 새로고침</b>을 누르면 실시간 시세를 즉시 불러옵니다. 켜두면 60초마다 자동 갱신됩니다.<br>
+        · 이름·기준가는 비밀번호로 암호화되어 브라우저에서만 열립니다. 시세 출처: Yahoo Finance.
       </div>
     </div>
   </div>
 
 <script>
 const ENC_URL = "data.enc";
+const PROXY_URL = "https://ugly-penguin-2675.lxxhxxxjxxxx.deno.net/";
 const REFRESH_MS = 60000;
-let cryptoKey = null;   // 복호화 키(비번 입력 후 메모리에만 보관)
+let roster = null;      // 복호화된 로스터 [{name,asset,tick,base,cur,note,sym}]
+let lastPrices = {};    // sym -> 최신가
 let timer = null;
 
 const b64ToBytes = (b) => Uint8Array.from(atob(b), c => c.charCodeAt(0));
@@ -170,6 +173,8 @@ const fmt = (v, cur) => cur === "usd"
   : Math.round(v).toLocaleString("ko-KR") + "원";
 const fmtPct = (p) => (p >= 0 ? "+" : "") + p.toFixed(2) + "%";
 const MEDALS = ["🥇", "🥈", "🥉"];
+const clock = () => new Date().toLocaleTimeString("ko-KR",
+  { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
 async function deriveKey(pw, salt, iter) {
   const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
@@ -178,23 +183,28 @@ async function deriveKey(pw, salt, iter) {
     km, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
 }
 
-async function fetchBlob() {
+async function decryptRoster(pw) {
   const res = await fetch(ENC_URL + "?t=" + Date.now(), { cache: "no-store" });
-  if (!res.ok) throw new Error("data.enc 로드 실패 (" + res.status + ")");
-  return res.json();
-}
-
-async function decryptPayload(key, blob) {
-  const iv = b64ToBytes(blob.iv);
-  const ct = b64ToBytes(blob.ct);
-  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+  if (!res.ok) throw new Error("data.enc " + res.status);
+  const blob = await res.json();
+  const key = await deriveKey(pw, b64ToBytes(blob.salt), blob.iter);
+  const pt = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: b64ToBytes(blob.iv) }, key, b64ToBytes(blob.ct)); // 실패 → 비번 오류
   return JSON.parse(new TextDecoder().decode(pt));
 }
 
-function render(data) {
-  const rows = data.rows.slice().sort((a, b) => b.pct - a.pct);
+function computeRows() {
+  return roster.map(r => {
+    const now = (lastPrices[r.sym] != null) ? lastPrices[r.sym] : r.base;
+    return { name: r.name, asset: r.asset, tick: r.tick, base: r.base,
+             now, cur: r.cur, note: r.note, pct: (now - r.base) / r.base * 100 };
+  });
+}
+
+function render(stampText) {
+  const rows = computeRows().sort((a, b) => b.pct - a.pct);
   const maxAbs = Math.max(...rows.map(r => Math.abs(r.pct)), 1);
-  document.getElementById("stamp").textContent = "📸 갱신 · " + data.stamp;
+  document.getElementById("stamp").textContent = stampText;
 
   const top = rows[0];
   document.getElementById("leader").innerHTML = `
@@ -233,29 +243,42 @@ function render(data) {
   }).join("");
 }
 
-async function refresh() {
-  if (!cryptoKey) return;
+async function refreshLive() {
+  if (!roster) return;
+  const btn = document.getElementById("refresh");
+  btn.disabled = true;
   try {
-    const blob = await fetchBlob();
-    render(await decryptPayload(cryptoKey, blob));
-  } catch (e) { /* 일시적 로드 실패는 조용히 무시 (다음 주기에 재시도) */ }
+    const res = await fetch(PROXY_URL + "?t=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) throw new Error("proxy " + res.status);
+    const data = await res.json();
+    for (const r of roster) {
+      const p = data.prices ? data.prices[r.sym] : null;
+      if (typeof p === "number" && isFinite(p)) lastPrices[r.sym] = p;
+    }
+    render("🟢 라이브 · " + clock());
+  } catch (e) {
+    render("⚠️ 실시간 연결 실패 · 직전값 · " + clock());
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 document.getElementById("lockform").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = document.getElementById("unlock");
   const err = document.getElementById("err");
-  const pw = document.getElementById("pw").value;
   err.textContent = ""; btn.disabled = true; btn.textContent = "여는 중…";
   try {
-    const blob = await fetchBlob();
-    const key = await deriveKey(pw, b64ToBytes(blob.salt), blob.iter);
-    const data = await decryptPayload(key, blob);   // 실패하면 비번 오류
-    cryptoKey = key;
+    const data = await decryptRoster(document.getElementById("pw").value);
+    roster = data.rows.map(r => ({ name: r.name, asset: r.asset, tick: r.tick,
+      base: r.base, cur: r.cur, note: r.note, sym: r.sym }));
+    lastPrices = {};
+    for (const r of data.rows) if (r.sym) lastPrices[r.sym] = r.now;   // 백업값 시드
     document.getElementById("lock").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
-    render(data);
-    timer = setInterval(refresh, REFRESH_MS);
+    render("📸 백업값 · " + (data.stamp || ""));   // 즉시 초기 렌더
+    await refreshLive();                             // 라이브로 덮어쓰기
+    timer = setInterval(refreshLive, REFRESH_MS);
   } catch (e) {
     err.textContent = "비밀번호가 올바르지 않습니다.";
   } finally {
@@ -263,8 +286,8 @@ document.getElementById("lockform").addEventListener("submit", async (e) => {
   }
 });
 
-document.getElementById("refresh").addEventListener("click", refresh);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+document.getElementById("refresh").addEventListener("click", refreshLive);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshLive(); });
 </script>
 </body>
 </html>

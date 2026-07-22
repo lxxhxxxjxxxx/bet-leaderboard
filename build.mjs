@@ -89,7 +89,7 @@ async function main() {
     }
     if (now == null) now = base;          // 직전값도 없으면 기준가로 (등락률 0)
     const pct = (now - base) / base * 100;
-    rows.push({ name, asset, tick, base, now, cur, note, pct });
+    rows.push({ name, asset, tick, base, now, cur, note, pct, sym });  // sym: 페이지 라이브 조회 매핑용
   }
   rows.sort((a, b) => b.pct - a.pct);
 
