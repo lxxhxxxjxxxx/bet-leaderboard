@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>내기 리더보드</title>
+<style>
+  :root {
+    --bg:#f3f5f8; --surface:#fff; --surface-2:#eceff4; --border:#dde2ea;
+    --text:#171b22; --muted:#5c6675; --faint:#8a94a3; --accent:#b07d13;
+    --pos:#0e9d63; --pos-soft:#d6f2e4; --neg:#d1453b; --neg-soft:#f7dcd9;
+    --shadow:0 1px 2px rgba(20,26,36,.05),0 8px 24px rgba(20,26,36,.06);
+    --mono:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic",Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme:dark) {
+    :root {
+      --bg:#0e1116; --surface:#161b22; --surface-2:#1d232c; --border:#2a313c;
+      --text:#e9edf2; --muted:#98a2b1; --faint:#6b7481; --accent:#e7b24a;
+      --pos:#37d399; --pos-soft:#123227; --neg:#f2726a; --neg-soft:#3a1f1d;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body { background:var(--bg); color:var(--text); font-family:var(--sans);
+    min-height:100vh; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:720px; margin:0 auto; padding:40px 20px 64px; }
+
+  /* 잠금 화면 */
+  .lock { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .lockcard { width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border);
+    border-radius:18px; box-shadow:var(--shadow); padding:28px 24px; text-align:center; }
+  .lockcard .ico { font-size:34px; }
+  .lockcard h2 { margin:10px 0 4px; font-size:20px; font-weight:800; letter-spacing:-.01em; }
+  .lockcard p { margin:0 0 18px; font-size:13px; color:var(--muted); }
+  .lockcard input { width:100%; padding:12px 14px; font-size:16px; font-family:var(--sans);
+    background:var(--surface-2); color:var(--text); border:1px solid var(--border);
+    border-radius:12px; outline:none; text-align:center; letter-spacing:.05em; }
+  .lockcard input:focus { border-color:var(--accent); }
+  .lockcard button { margin-top:12px; width:100%; padding:12px 14px; font-size:15px; font-weight:700;
+    font-family:var(--sans); color:#fff; background:var(--accent); border:0; border-radius:12px;
+    cursor:pointer; }
+  .lockcard button:disabled { opacity:.6; cursor:default; }
+  .lockcard .err { margin-top:12px; font-size:13px; color:var(--neg); min-height:18px; }
+
+  /* 리더보드 */
+  .eyebrow { display:inline-flex; align-items:center; gap:8px; font-size:12px;
+    font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); }
+  .eyebrow .dot { width:7px; height:7px; border-radius:50%; background:var(--accent); }
+  .head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  h1 { font-size:clamp(26px,6vw,38px); font-weight:800; letter-spacing:-.02em;
+    margin:12px 0 10px; text-wrap:balance; line-height:1.05; }
+  .refresh { flex:none; margin-top:14px; display:inline-flex; align-items:center; gap:6px;
+    padding:8px 12px; font-size:13px; font-weight:600; font-family:var(--sans); cursor:pointer;
+    color:var(--text); background:var(--surface); border:1px solid var(--border);
+    border-radius:10px; box-shadow:var(--shadow); }
+  .refresh:active { transform:translateY(1px); }
+  .meta { font-size:13px; color:var(--muted); font-family:var(--mono);
+    display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
+  .meta b { color:var(--text); font-weight:600; }
+  .snap { display:inline-flex; align-items:center; gap:6px; padding:3px 9px;
+    border-radius:999px; background:var(--surface-2); border:1px solid var(--border);
+    font-size:12px; color:var(--muted); }
+
+  .leader { margin:24px 0 18px; padding:22px 24px; background:var(--surface);
+    border:1px solid var(--border); border-left:4px solid var(--accent);
+    border-radius:16px; box-shadow:var(--shadow); display:flex; align-items:center;
+    justify-content:space-between; gap:16px; }
+  .leader .who { display:flex; flex-direction:column; gap:3px; }
+  .leader .lbl { font-size:11px; font-weight:700; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--accent); }
+  .leader .nm { font-size:26px; font-weight:800; letter-spacing:-.01em; }
+  .leader .as { font-size:14px; color:var(--muted); }
+  .leader .pct { font-family:var(--mono); font-size:30px; font-weight:700; letter-spacing:-.01em; }
+  .board { display:flex; flex-direction:column; gap:10px; }
+  .row { display:grid; grid-template-columns:44px 1fr auto; align-items:center;
+    gap:14px; padding:14px 16px; background:var(--surface); border:1px solid var(--border);
+    border-radius:14px; box-shadow:var(--shadow); }
+  .rank { display:flex; align-items:center; justify-content:center; }
+  .rank .num { font-family:var(--mono); font-size:18px; font-weight:700; color:var(--faint);
+    width:36px; height:36px; display:grid; place-items:center; }
+  .rank .medal { font-size:24px; line-height:1; }
+  .info { min-width:0; }
+  .info .top { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .info .name { font-size:18px; font-weight:800; letter-spacing:-.01em; }
+  .info .asset { font-size:14px; color:var(--text); font-weight:600; }
+  .info .tick { font-size:11px; color:var(--faint); font-family:var(--mono); letter-spacing:.02em; }
+  .info .prices { margin-top:4px; font-family:var(--mono); font-size:12.5px; color:var(--muted);
+    display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+  .info .prices .arw { color:var(--faint); }
+  .info .prices .now { color:var(--text); font-weight:600; }
+  .info .prices .basenote { color:var(--faint); }
+  .perf { display:flex; flex-direction:column; align-items:flex-end; gap:7px; min-width:96px; }
+  .chip { font-family:var(--mono); font-weight:700; font-size:17px; padding:4px 10px;
+    border-radius:9px; letter-spacing:-.01em; font-variant-numeric:tabular-nums; }
+  .chip.up { color:var(--pos); background:var(--pos-soft); }
+  .chip.dn { color:var(--neg); background:var(--neg-soft); }
+  .bar { width:96px; height:6px; border-radius:4px; background:var(--surface-2);
+    position:relative; overflow:hidden; }
+  .bar .mid { position:absolute; left:50%; top:0; bottom:0; width:1px; background:var(--border); }
+  .bar .fill { position:absolute; top:0; bottom:0; }
+  .bar .fill.up { left:50%; background:var(--pos); }
+  .bar .fill.dn { right:50%; background:var(--neg); }
+  .foot { margin-top:26px; padding-top:18px; border-top:1px solid var(--border);
+    font-size:12.5px; color:var(--muted); line-height:1.7; }
+  .foot .h { font-weight:700; color:var(--text); letter-spacing:.02em; margin-bottom:4px; }
+  .foot code { font-family:var(--mono); color:var(--text); font-size:12px; }
+  .foot .note { margin-top:10px; color:var(--faint); }
+  @media (max-width:520px) {
+    .leader { flex-direction:column; align-items:flex-start; gap:10px; }
+    .row { grid-template-columns:38px 1fr; }
+    .perf { grid-column:1 / -1; flex-direction:row; align-items:center;
+      justify-content:flex-end; gap:12px; }
+    .bar { order:-1; }
+  }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+  <!-- 잠금 화면 -->
+  <div class="lock" id="lock">
+    <form class="lockcard" id="lockform">
+      <div class="ico">🔒</div>
+      <h2>내기 리더보드</h2>
+      <p>비밀번호를 입력하세요</p>
+      <input id="pw" type="password" inputmode="text" autocomplete="off"
+             autocapitalize="off" spellcheck="false" placeholder="비밀번호">
+      <button id="unlock" type="submit">열기</button>
+      <div class="err" id="err"></div>
+    </form>
+  </div>
+
+  <!-- 리더보드 -->
+  <div class="wrap hidden" id="app">
+    <div class="head">
+      <div>
+        <div class="eyebrow"><span class="dot"></span>실시간 내기 리더보드</div>
+        <h1>종목 내기 스탠딩</h1>
+      </div>
+      <button class="refresh" id="refresh" type="button">↻ 새로고침</button>
+    </div>
+    <div class="meta">
+      <span class="snap" id="stamp">📸 —</span>
+      <span>기준가 대비 <b>등락률</b> 순위</span>
+    </div>
+    <div id="leader"></div>
+    <div class="board" id="board"></div>
+    <div class="foot">
+      <div class="h">기준가(baseline)</div>
+      팔란티어·나스닥 <code>2/5 종가</code> · 태광산업·네이버·로보티즈 <code>2/6 종가</code> · BNB <code>2/6 21:00 KST</code>
+      <div class="note">
+        · 등락률 = (현재가 − 기준가) ÷ 기준가 &nbsp;·&nbsp; 팔란티어·BNB는 USD, 태광산업·네이버·로보티즈는 KRW 기준.<br>
+        · GitHub Actions가 약 10분마다 시세를 갱신합니다. 이 페이지는 60초마다 자동으로 최신 데이터를 다시 불러옵니다.<br>
+        · 데이터는 비밀번호로 암호화되어 있으며 브라우저에서만 복호화됩니다. 출처: Yahoo Finance.
+      </div>
+    </div>
+  </div>
+
+<script>
+const ENC_URL = "data.enc";
+const REFRESH_MS = 60000;
+let cryptoKey = null;   // 복호화 키(비번 입력 후 메모리에만 보관)
+let timer = null;
+
+const b64ToBytes = (b) => Uint8Array.from(atob(b), c => c.charCodeAt(0));
+const fmt = (v, cur) => cur === "usd"
+  ? "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  : Math.round(v).toLocaleString("ko-KR") + "원";
+const fmtPct = (p) => (p >= 0 ? "+" : "") + p.toFixed(2) + "%";
+const MEDALS = ["🥇", "🥈", "🥉"];
+
+async function deriveKey(pw, salt, iter) {
+  const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: iter, hash: "SHA-256" },
+    km, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+}
+
+async function fetchBlob() {
+  const res = await fetch(ENC_URL + "?t=" + Date.now(), { cache: "no-store" });
+  if (!res.ok) throw new Error("data.enc 로드 실패 (" + res.status + ")");
+  return res.json();
+}
+
+async function decryptPayload(key, blob) {
+  const iv = b64ToBytes(blob.iv);
+  const ct = b64ToBytes(blob.ct);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+function render(data) {
+  const rows = data.rows.slice().sort((a, b) => b.pct - a.pct);
+  const maxAbs = Math.max(...rows.map(r => Math.abs(r.pct)), 1);
+  document.getElementById("stamp").textContent = "📸 갱신 · " + data.stamp;
+
+  const top = rows[0];
+  document.getElementById("leader").innerHTML = `
+    <div class="leader">
+      <div class="who">
+        <span class="lbl">🏆 현재 선두</span>
+        <span class="nm">${top.name}</span>
+        <span class="as">${top.asset} · ${fmt(top.now, top.cur)}</span>
+      </div>
+      <div class="pct" style="color:var(--${top.pct >= 0 ? "pos" : "neg"})">${fmtPct(top.pct)}</div>
+    </div>`;
+
+  document.getElementById("board").innerHTML = rows.map((r, i) => {
+    const up = r.pct >= 0, w = Math.abs(r.pct) / maxAbs * 50;
+    const rank = i < 3 ? `<span class="medal">${MEDALS[i]}</span>` : `<span class="num">${i + 1}</span>`;
+    const cls = up ? "up" : "dn";
+    return `<div class="row">
+      <div class="rank">${rank}</div>
+      <div class="info">
+        <div class="top">
+          <span class="name">${r.name}</span>
+          <span class="asset">${r.asset}</span>
+          <span class="tick">${r.tick}</span>
+        </div>
+        <div class="prices">
+          <span>${fmt(r.base, r.cur)}</span><span class="arw">→</span>
+          <span class="now">${fmt(r.now, r.cur)}</span>
+          <span class="basenote">· 기준 ${r.note}</span>
+        </div>
+      </div>
+      <div class="perf">
+        <span class="chip ${cls}">${fmtPct(r.pct)}</span>
+        <div class="bar"><div class="mid"></div><div class="fill ${cls}" style="width:${w}%"></div></div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function refresh() {
+  if (!cryptoKey) return;
+  try {
+    const blob = await fetchBlob();
+    render(await decryptPayload(cryptoKey, blob));
+  } catch (e) { /* 일시적 로드 실패는 조용히 무시 (다음 주기에 재시도) */ }
+}
+
+document.getElementById("lockform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("unlock");
+  const err = document.getElementById("err");
+  const pw = document.getElementById("pw").value;
+  err.textContent = ""; btn.disabled = true; btn.textContent = "여는 중…";
+  try {
+    const blob = await fetchBlob();
+    const key = await deriveKey(pw, b64ToBytes(blob.salt), blob.iter);
+    const data = await decryptPayload(key, blob);   // 실패하면 비번 오류
+    cryptoKey = key;
+    document.getElementById("lock").classList.add("hidden");
+    document.getElementById("app").classList.remove("hidden");
+    render(data);
+    timer = setInterval(refresh, REFRESH_MS);
+  } catch (e) {
+    err.textContent = "비밀번호가 올바르지 않습니다.";
+  } finally {
+    btn.disabled = false; btn.textContent = "열기";
+  }
+});
+
+document.getElementById("refresh").addEventListener("click", refresh);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+</script>
+</body>
+</html>

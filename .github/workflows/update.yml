@@ -1,0 +1,33 @@
+name: update-leaderboard
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # 약 10분마다 (GitHub 스케줄러 특성상 지연될 수 있음)
+  workflow_dispatch:          # 수동 실행 버튼
+permissions:
+  contents: write
+concurrency:
+  group: update-leaderboard
+  cancel-in-progress: true
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Fetch prices & encrypt
+        env:
+          LEADERBOARD_PW: ${{ secrets.LEADERBOARD_PW }}
+        run: node build.mjs
+      - name: Commit if changed
+        run: |
+          git config user.name  "leaderboard-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if [ -n "$(git status --porcelain data.enc)" ]; then
+            git add data.enc
+            git commit -m "chore: 시세 갱신 ($(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M') KST)"
+            git push
+          else
+            echo "변경 없음 — 커밋 생략"
+          fi
